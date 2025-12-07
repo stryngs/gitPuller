@@ -26,6 +26,7 @@ A Python3 script to recursively backup Git repositories by pulling the latest ch
 ---
 
 ## Usage
-
+It is recommended to add gitPuller.py to your path.
 ```bash
-./backup_git.py [options]
+./gitPuller.py [options]
+```
