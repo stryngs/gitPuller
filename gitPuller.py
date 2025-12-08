@@ -43,8 +43,6 @@ def list_local_branches(cwd, env):
 def process_repo(path, use_all, env):
     """Run the backup routine on a single repository."""
     print(f'{COLOR_GREEN}Processing repository:{COLOR_RESET} {COLOR_BLUE}{path}{COLOR_RESET}')
-
-
     if not os.path.isdir(os.path.join(path, '.git')):
         print('Not a git repository. Skipping.')
         return
@@ -60,8 +58,12 @@ def process_repo(path, use_all, env):
 
     ## local branches
     for br in local_branches:
-        run_git_command(['checkout', br], path, env)
-        pull_branch(br, path, env)
+        try:
+            run_git_command(['checkout', br], path, env)
+            pull_branch(br, path, env)
+        except Exception as e:
+            PROBLEM_REPOS.append((path, f"local branch '{br}'", str(e)))
+            print(f"{COLOR_RED}[!] Error on {path} branch {br}. Continuing...{COLOR_RESET}")
 
     ## for --all
     if use_all:
@@ -69,13 +71,16 @@ def process_repo(path, use_all, env):
             local_equiv = remote.split('/', 1)[1]
             if local_equiv not in local_branches:
                 print(f'\n--- Creating local branch {local_equiv} from {remote} ---')
-                run_git_command(['checkout', '-b', local_equiv, remote], path, env)
-                pull_branch(local_equiv, path, env)
+                try:
+                    run_git_command(['checkout', '-b', local_equiv, remote], path, env)
+                    pull_branch(local_equiv, path, env)
+                except Exception as e:
+                    PROBLEM_REPOS.append((path, f"remote '{remote}'", str(e)))
+                    print(f"{COLOR_RED}[!] Error creating/updating {local_equiv} from {remote}. Continuing...{COLOR_RESET}")
 
 
 def pull_branch(branch, cwd, env):
     print(f'Pulling latest for {branch}...')
-
     try:
         # First attempt: without credentials
         result = subprocess.run(['git', 'pull'],
@@ -85,11 +90,19 @@ def pull_branch(branch, cwd, env):
                                 capture_output = True,
                                 check = True)
         return
-
     except subprocess.CalledProcessError as E:
         stderr = E.stderr or ''
 
-        # Detect authentication failures
+        ## tracking handling
+        no_tracking = 'There is no tracking information for the current branch' in stderr
+
+        if no_tracking:
+            msg = f'No upstream tracking branch for {branch} in {cwd}'
+            PROBLEM_REPOS.append((cwd, f"branch '{branch}'", msg))
+            print(f'{COLOR_YELLOW}[!] {msg}. Skipping pull.{COLOR_RESET}')
+            return
+
+        ## find auth fails
         auth_fail = any(msg in stderr for msg in ['Authentication failed',
                                                   'fatal: could not read',
                                                   'Permission denied',
@@ -97,19 +110,23 @@ def pull_branch(branch, cwd, env):
                                                   'returned error: 403',
                                                   'returned error: 401'])
 
+        ## pull error handling
         if not auth_fail:
-            print(f'[!] Pull error: {stderr}')
-            sys.exit(1)
+            msg = f'Pull error on {cwd} branch {branch}: {stderr}'
+            PROBLEM_REPOS.append((cwd, f"branch '{branch}'", msg))
+            print(f'{COLOR_RED}[!] {msg}{COLOR_RESET}')
+            return
 
         print(f'{COLOR_YELLOW}[!] Authentication required for {cwd}{COLOR_RESET}')
 
         if not env:
-            print(f'{COLOR_RED}[!] No credentials provided (-p or -s). Skipping.{COLOR_RESET}')
+            msg = f'No credentials provided to pull {branch} in {cwd}'
+            PROBLEM_REPOS.append((cwd, f"branch '{branch}'", msg))
+            print(f'{COLOR_RED}[!] {msg}{COLOR_RESET}')
             return
 
         print(f'{COLOR_BLUE}[~] Retrying with provided credentials...{COLOR_RESET}')
 
-        # Retry with injected credentials
         try:
             subprocess.run(['git', 'pull'],
                            cwd = cwd,
@@ -120,7 +137,9 @@ def pull_branch(branch, cwd, env):
             print(f'{COLOR_GREEN}[+] Pull succeeded with credentials.{COLOR_RESET}')
 
         except subprocess.CalledProcessError as E2:
-            print(f'{COLOR_RED}[!] Pull failed with credentials:{COLOR_RESET}\n{E2.stderr}')
+            msg = f'Pull failed with credentials in {cwd} on branch {branch}:\n{E2.stderr}'
+            PROBLEM_REPOS.append((cwd, f"branch '{branch}'", msg))
+            print(f'{COLOR_RED}[!] {msg}{COLOR_RESET}')
 
 
 def run_git_command(args, cwd, env = None, check = True):
@@ -137,9 +156,10 @@ def run_git_command(args, cwd, env = None, check = True):
                                 check = check,
                                 env = env_vars)
         return result.stdout.strip()
-    except Exception as E:
-        print(E)
-        sys.exit(1)
+
+    ## make the issue known
+    except subprocess.CalledProcessError as E:
+        raise RuntimeError(f"Git command failed in {cwd}: git {' '.join(args)}\n stdout: {E.stdout}\nstderr: {E.stderr}")
 
 
 def sshEnv():
@@ -192,7 +212,7 @@ def main():
     askpass_path = None  # define before conditional
     if args.p:
         password = getpass.getpass('Enter your Git password: ')
-        with tempfile.NamedTemporaryFile(delete=False, mode='w') as f:
+        with tempfile.NamedTemporaryFile(delete = False, mode = 'w') as f:
             askpass_path = f.name
             f.write(f"#!/bin/sh\necho '{password}'\n")
         os.chmod(askpass_path, 0o700)
@@ -201,7 +221,6 @@ def main():
         # Register cleanup
         import atexit
         atexit.register(lambda: os.remove(askpass_path) if askpass_path else None)
-
     if args.s:
         env = sshEnv()
 
@@ -219,12 +238,24 @@ def main():
             process_repo(repo, args.all, env)
     print('\n[~] All backups complete!')
 
+    if PROBLEM_REPOS:
+        print(f'\n{COLOR_YELLOW}[!] Some repositories had issues:{COLOR_RESET}\n')
+        for repo, item, err in PROBLEM_REPOS:
+            print(f'{COLOR_RED}- Repo:{COLOR_RESET} {repo}')
+            print(f'  Problem item: {item}')
+            print(f'  Error: {err}\n')
+    else:
+        print(f'{COLOR_GREEN}[+] No issues encountered.{COLOR_RESET}')
+
+
 # ANSI color helpers
 COLOR_BLUE = '\033[94m'
 COLOR_GREEN = '\033[92m'
 COLOR_YELLOW = '\033[93m'
 COLOR_RED = '\033[91m'
 COLOR_RESET = '\033[0m'
+
+PROBLEM_REPOS = []
 
 if __name__ == '__main__':
     main()
