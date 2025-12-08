@@ -1,5 +1,5 @@
 # gitPuller
-A Python3 script to recursively backup Git repositories by pulling the latest changes for local and remote branches. It handles authentication gracefully, allowing password or SSH key usage only when needed.
+A Python3 script to recursively backup Git repositories by pulling the latest changes for local and remote branches. It handles authentication gracefully, allowing password or SSH key usage only when needed.  While pulling if any errors are encountered they are gracefully skipped and printed out at the end.
 
 ---
 
