@@ -8,6 +8,10 @@ import sys
 import getpass
 import tempfile
 
+def current_branch(cwd, env):
+    return run_git_command(['rev-parse', '--abbrev-ref', 'HEAD'], cwd, env)
+
+
 def find_repos(base, depth, current = 0):
     """
     Yield git repository paths.
@@ -47,6 +51,13 @@ def process_repo(path, use_all, env):
         print('Not a git repository. Skipping.')
         return
 
+    ## Notate current branch
+    original_branch = None
+    try:
+        original_branch = current_branch(path, env)
+    except Exception:
+        pass
+
     ## branch discovery mode
     if use_all:
         branches = list_all_branches(path, env)
@@ -77,6 +88,15 @@ def process_repo(path, use_all, env):
                 except Exception as e:
                     PROBLEM_REPOS.append((path, f"remote '{remote}'", str(e)))
                     print(f"{COLOR_RED}[!] Error creating/updating {local_equiv} from {remote}. Continuing...{COLOR_RESET}")
+
+    ## Revert to original branch
+    if original_branch:
+        try:
+            run_git_command(['checkout', original_branch], path, env)
+            print(f'{COLOR_BLUE}[~] Restored branch {original_branch}{COLOR_RESET}')
+        except Exception as e:
+            PROBLEM_REPOS.append((path, 'restore branch', str(e)))
+            print(f'{COLOR_RED}[!] Failed to restore branch {original_branch}{COLOR_RESET}')
 
 
 def pull_branch(branch, cwd, env):
