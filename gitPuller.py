@@ -87,7 +87,7 @@ def pull_branch(branch, cwd, env):
                                 cwd = cwd,
                                 text = True,
                                 env = os.environ,
-                                capture_output = True,
+                                capture_output = False,
                                 check = True)
         return
     except subprocess.CalledProcessError as E:
