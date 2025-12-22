@@ -46,9 +46,9 @@ def list_local_branches(cwd, env):
 
 def process_repo(path, use_all, env):
     """Run the backup routine on a single repository."""
-    print(f'{COLOR_GREEN}Processing repository:{COLOR_RESET} {COLOR_BLUE}{path}{COLOR_RESET}')
+    print(f'{COLOR_GREEN} [~] Processing repository:{COLOR_RESET} {COLOR_BLUE}{path}{COLOR_RESET}')
     if not os.path.isdir(os.path.join(path, '.git')):
-        print('Not a git repository. Skipping.')
+        print(f'{COLOR_YELLOW} [!] Not a git repository. Skipping.{COLOR_RESET}')
         return
 
     ## Notate current branch
@@ -74,20 +74,20 @@ def process_repo(path, use_all, env):
             pull_branch(br, path, env)
         except Exception as e:
             PROBLEM_REPOS.append((path, f"local branch '{br}'", str(e)))
-            print(f"{COLOR_RED}[!] Error on {path} branch {br}. Continuing...{COLOR_RESET}")
+            print(f'{COLOR_RED}[!] Error on {path} branch {br}. Continuing...{COLOR_RESET}')
 
     ## for --all
     if use_all:
         for remote in remote_branches:
             local_equiv = remote.split('/', 1)[1]
             if local_equiv not in local_branches:
-                print(f'\n--- Creating local branch {local_equiv} from {remote} ---')
+                print(f'\n{COLOR_GREEN}[~] Creating local branch {local_equiv} from {remote}{COLOR_RESET}')
                 try:
                     run_git_command(['checkout', '-b', local_equiv, remote], path, env)
                     pull_branch(local_equiv, path, env)
                 except Exception as e:
                     PROBLEM_REPOS.append((path, f"remote '{remote}'", str(e)))
-                    print(f"{COLOR_RED}[!] Error creating/updating {local_equiv} from {remote}. Continuing...{COLOR_RESET}")
+                    print(f'{COLOR_RED}[!] Error creating/updating {local_equiv} from {remote}. Continuing...{COLOR_RESET}')
 
     ## Revert to original branch
     if original_branch:
@@ -154,7 +154,7 @@ def pull_branch(branch, cwd, env):
                            env = {**os.environ, **env},
                            capture_output = True,
                            check = True)
-            print(f'{COLOR_GREEN}[+] Pull succeeded with credentials.{COLOR_RESET}')
+            print(f'{COLOR_GREEN}[~] Pull succeeded with credentials.{COLOR_RESET}')
 
         except subprocess.CalledProcessError as E2:
             msg = f'Pull failed with credentials in {cwd} on branch {branch}:\n{E2.stderr}'
@@ -179,11 +179,11 @@ def run_git_command(args, cwd, env = None, check = True):
 
     ## make the issue known
     except subprocess.CalledProcessError as E:
-        raise RuntimeError(f"Git command failed in {cwd}: git {' '.join(args)}\n stdout: {E.stdout}\nstderr: {E.stderr}")
+        raise RuntimeError(f"{COLOR_RED}[!] Git command failed in {cwd}: git {' '.join(args)}\n stdout: {E.stdout}\nstderr: {E.stderr}{COLOR_RESET}")
 
 
 def sshEnv():
-    print('[~] Starting ssh-agent')
+    print(f'{COLOR_GREEN}[~] Starting ssh-agent{COLOR_RESET}')
     result = subprocess.run(['ssh-agent', '-s'],
                             text = True,
                             capture_output = True,
@@ -198,10 +198,10 @@ def sshEnv():
             env['SSH_AGENT_PID'] = line.split(';', 1)[0].split('=', 1)[1]
 
     ## env handler
-    print('[~] Adding SSH key')
+    print(f'{COLOR_GREEN}[~] Adding SSH key{COLOR_RESET}')
     os.environ.update(env)
     subprocess.run(['ssh-add'], check = True)
-    print('[+] SSH agent ready.\n')
+    print(f'{COLOR_GREEN}[~] SSH agent ready.\n{COLOR_RESET}')
     return env
 
 
@@ -239,7 +239,6 @@ def main():
         env = {'GIT_ASKPASS': askpass_path, 'SSH_ASKPASS': askpass_path}
 
         # Register cleanup
-        import atexit
         atexit.register(lambda: os.remove(askpass_path) if askpass_path else None)
     if args.s:
         env = sshEnv()
@@ -250,13 +249,13 @@ def main():
     else:
         depth = args.r
         if depth == 0:
-            print('Recursing infinitely...\n')
+            print(f'{COLOR_GREEN}[~] Recursing infinitely...\n{COLOR_RESET}')
         else:
-            print(f'Recursing {depth} level(s) deep...\n')
+            print(f'{COLOR_GREEN}[~] Recursing {depth} level(s) deep...\n{COLOR_RESET}')
 
         for repo in find_repos(base_dir, depth):
             process_repo(repo, args.all, env)
-    print('\n[~] All backups complete!')
+    print(f'\n{COLOR_GREEN}[~] All backups complete!{COLOR_RESET}')
 
     if PROBLEM_REPOS:
         print(f'\n{COLOR_YELLOW}[!] Some repositories had issues:{COLOR_RESET}\n')
@@ -265,7 +264,7 @@ def main():
             print(f'  Problem item: {item}')
             print(f'  Error: {err}\n')
     else:
-        print(f'{COLOR_GREEN}[+] No issues encountered.{COLOR_RESET}')
+        print(f'{COLOR_GREEN}[~] No issues encountered.{COLOR_RESET}')
 
 
 # ANSI color helpers
